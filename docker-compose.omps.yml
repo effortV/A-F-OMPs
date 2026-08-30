@@ -47,3 +47,22 @@ services:
       - ./server_secrets:/run/omps-secrets
     depends_on:
       - omps-ui
+
+  omps-edge:
+    image: docker.1ms.run/library/caddy:2-alpine
+    container_name: af-omps-edge
+    restart: unless-stopped
+    ports:
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - omps_caddy_data:/data
+      - omps_caddy_config:/config
+    depends_on:
+      - omps-ui
+      - omps-bridge
+
+volumes:
+  omps_caddy_data:
+  omps_caddy_config:

@@ -60,7 +60,10 @@ def health() -> dict:
     papers = None
     if db_path.is_file():
         try:
-            uri = f"file:{db_path.as_posix()}?mode=ro"
+            # SQLite WAL mode normally wants to create a shared-memory file.
+            # The health service has a read-only data mount, so immutable mode
+            # is required for this diagnostic query.
+            uri = f"file:{db_path.as_posix()}?mode=ro&immutable=1"
             with sqlite3.connect(uri, uri=True, timeout=5) as connection:
                 papers = int(connection.execute("SELECT COUNT(*) FROM papers").fetchone()[0])
         except (sqlite3.Error, OSError):

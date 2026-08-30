@@ -1,0 +1,13 @@
+omps.112-15-87-51.sslip.io {
+    encode zstd gzip
+
+    @bridge path /bridge /bridge/*
+    handle @bridge {
+        uri strip_prefix /bridge
+        reverse_proxy omps-bridge:8602
+    }
+
+    handle {
+        reverse_proxy omps-ui:8502
+    }
+}

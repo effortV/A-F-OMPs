@@ -1,0 +1,14 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.bridge.example
+.streamlit/secrets.toml
+__pycache__/
+*.pyc
+live_data/
+server_secrets/
+store/
+dataset.xlsx
+reference-59/
+*.tar.gz
