@@ -3,3 +3,6 @@ store/
 __pycache__/
 *.pyc
 .streamlit/secrets.toml
+.env.bridge
+server_secrets/
+live_data/
