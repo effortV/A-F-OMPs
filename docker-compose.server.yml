@@ -1,0 +1,20 @@
+services:
+  api:
+    environment:
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8501,http://127.0.0.1:8501}
+    volumes:
+      - ./app:/app/app:ro
+
+  worker:
+    volumes:
+      - ./app:/app/app:ro
+
+  priority-worker:
+    volumes:
+      - ./app:/app/app:ro
+
+  ui:
+    environment:
+      API_BASE_URL: http://api:8000
+    volumes:
+      - ./ui:/app/ui:ro

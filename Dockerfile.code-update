@@ -1,0 +1,10 @@
+# Fast application-only update. Reuse the already working NF-Atlas runtime image
+# (including PyTorch and all Python packages) and replace only repository code.
+ARG BASE_IMAGE=nf-atlas-api:latest
+FROM ${BASE_IMAGE}
+
+WORKDIR /app
+COPY app ./app
+COPY ui ./ui
+COPY scripts ./scripts
+COPY streamlit_cloud.py ./streamlit_cloud.py

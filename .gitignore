@@ -1,0 +1,16 @@
+.env
+.streamlit/secrets.toml
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+data/runtime/
+*.db
+*.sqlite3
+chroma/
+objects/
+models/
+backups/
+migration/

@@ -1,0 +1,228 @@
+name: nf-atlas
+
+x-app-env: &app-env
+  DATABASE_URL: postgresql+psycopg://nfagent:${POSTGRES_PASSWORD:-nf-agent-postgres}@postgres:5432/nfagent
+  REDIS_URL: redis://redis:6379/0
+  USE_RQ: "true"
+  PRIORITY_QUEUE_NAME: nf-priority
+  STORAGE_BACKEND: minio
+  MINIO_ENDPOINT: minio:9000
+  MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-nfadmin}
+  MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-nf-agent-minio}
+  MINIO_BUCKET: nf-literature
+  NEO4J_URI: bolt://neo4j:7687
+  NEO4J_USER: neo4j
+  NEO4J_PASSWORD: ${NEO4J_PASSWORD:-nf-agent-neo4j}
+  CHROMA_HOST: chroma
+  CHROMA_PORT: "8000"
+  GROBID_URL: http://grobid:8070
+  ALLOW_EMBEDDING_DOWNLOAD: "true"
+  ALLOW_EMBEDDING_FALLBACK: "false"
+  HF_HOME: /models
+  HF_ENDPOINT: ${HF_ENDPOINT:-https://hf-mirror.com}
+  HF_HUB_DISABLE_XET: "1"
+  HF_HUB_DOWNLOAD_TIMEOUT: "120"
+  HF_HUB_ETAG_TIMEOUT: "30"
+  ANONYMIZED_TELEMETRY: "FALSE"
+  SILICONFLOW_API_KEY: ${SILICONFLOW_API_KEY:-}
+  SILICONFLOW_BASE_URL: ${SILICONFLOW_BASE_URL:-https://api.siliconflow.cn/v1}
+  LLM_MODEL: ${LLM_MODEL:-Pro/deepseek-ai/DeepSeek-V3.2}
+  CHAT_LLM_MODEL: ${CHAT_LLM_MODEL:-deepseek-ai/DeepSeek-V4-Pro}
+  OPENALEX_API_KEY: ${OPENALEX_API_KEY:-}
+  OPENALEX_EMAIL: ${OPENALEX_EMAIL:-}
+  UNPAYWALL_EMAIL: ${UNPAYWALL_EMAIL:-}
+  SEMANTIC_SCHOLAR_API_KEY: ${SEMANTIC_SCHOLAR_API_KEY:-}
+  ELSEVIER_API_KEY: ${ELSEVIER_API_KEY:-}
+  ELSEVIER_INSTTOKEN: ${ELSEVIER_INSTTOKEN:-}
+  DIRECT_WEB_FETCH: ${DIRECT_WEB_FETCH:-true}
+  DIRECT_WEB_RESPECT_ROBOTS: ${DIRECT_WEB_RESPECT_ROBOTS:-true}
+  DIRECT_WEB_MIN_INTERVAL_SECONDS: ${DIRECT_WEB_MIN_INTERVAL_SECONDS:-1.0}
+  DIRECT_WEB_MAX_BYTES: ${DIRECT_WEB_MAX_BYTES:-104857600}
+  DIRECT_HTML_MIN_CHARS: ${DIRECT_HTML_MIN_CHARS:-3000}
+
+services:
+  postgres:
+    image: ${DOCKER_REGISTRY_PREFIX:-docker.1ms.run}/library/postgres:16-alpine
+    environment:
+      POSTGRES_DB: nfagent
+      POSTGRES_USER: nfagent
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nf-agent-postgres}
+    volumes:
+      - nf_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nfagent -d nfagent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: ${DOCKER_REGISTRY_PREFIX:-docker.1ms.run}/library/redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - nf_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  neo4j:
+    image: ${DOCKER_REGISTRY_PREFIX:-docker.1ms.run}/library/neo4j:5-community
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-nf-agent-neo4j}
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 1G
+    ports:
+      - "${NF_BIND_HOST:-127.0.0.1}:7474:7474"
+      - "${NF_BIND_HOST:-127.0.0.1}:7687:7687"
+    volumes:
+      - nf_neo4j_data:/data
+      - nf_neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  minio:
+    image: ${DOCKER_REGISTRY_PREFIX:-docker.1ms.run}/minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-nfadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-nf-agent-minio}
+    ports:
+      - "${NF_BIND_HOST:-127.0.0.1}:9000:9000"
+      - "${NF_BIND_HOST:-127.0.0.1}:9001:9001"
+    volumes:
+      - nf_minio:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  chroma:
+    image: ${DOCKER_REGISTRY_PREFIX:-docker.1ms.run}/chromadb/chroma:0.6.3
+    environment:
+      IS_PERSISTENT: "TRUE"
+      PERSIST_DIRECTORY: /chroma/chroma
+      ANONYMIZED_TELEMETRY: "FALSE"
+    volumes:
+      - nf_chroma:/chroma/chroma
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v2/heartbeat', timeout=4).read()",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  grobid:
+    image: ${DOCKER_REGISTRY_PREFIX:-docker.1ms.run}/lfoppiano/grobid:0.8.1
+    init: true
+    environment:
+      JAVA_OPTS: -Xms512m -Xmx2g
+    volumes:
+      - nf_grobid:/opt/grobid/grobid-home/tmp
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      args:
+        PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-docker.1ms.run/library/python:3.11-slim}
+        PYTORCH_CPU_INDEX_URL: ${PYTORCH_CPU_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+    environment:
+      <<: *app-env
+      CORS_ORIGINS: http://localhost:8501
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "${NF_BIND_HOST:-127.0.0.1}:8000:8000"
+    volumes:
+      - nf_models:/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      chroma:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      args:
+        PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-docker.1ms.run/library/python:3.11-slim}
+        PYTORCH_CPU_INDEX_URL: ${PYTORCH_CPU_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+    environment:
+      <<: *app-env
+    command: ["python", "-m", "app.worker"]
+    stop_grace_period: 2m
+    volumes:
+      - nf_models:/models
+    depends_on:
+      api:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  priority-worker:
+    build:
+      context: .
+      args:
+        PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-docker.1ms.run/library/python:3.11-slim}
+        PYTORCH_CPU_INDEX_URL: ${PYTORCH_CPU_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+    environment:
+      <<: *app-env
+      WORKER_QUEUE_NAMES: nf-priority
+      WORKER_RECOVER_TASKS: "false"
+    command: ["python", "-m", "app.worker"]
+    stop_grace_period: 2m
+    volumes:
+      - nf_models:/models
+    depends_on:
+      api:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  ui:
+    build:
+      context: .
+      args:
+        PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-docker.1ms.run/library/python:3.11-slim}
+        PYTORCH_CPU_INDEX_URL: ${PYTORCH_CPU_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+    environment:
+      API_BASE_URL: http://api:8000
+    command: ["streamlit", "run", "ui/streamlit_app.py", "--server.address=0.0.0.0", "--server.port=8501"]
+    ports:
+      - "${NF_BIND_HOST:-127.0.0.1}:8501:8501"
+    depends_on:
+      api:
+        condition: service_started
+    profiles: ["docker-ui"]
+    restart: unless-stopped
+
+volumes:
+  nf_postgres:
+  nf_redis:
+  nf_neo4j_data:
+  nf_neo4j_logs:
+  nf_minio:
+  nf_chroma:
+  nf_grobid:
+  nf_models:

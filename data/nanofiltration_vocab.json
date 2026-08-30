@@ -1,0 +1,38 @@
+{
+  "界面聚合": {
+    "en": ["interfacial polymerization", "IP", "thin-film composite", "TFC", "thin-film nanocomposite", "TFN"],
+    "broader": ["膜制备", "聚合反应"],
+    "narrower": ["水相单体", "有机相单体", "哌嗪-均苯三甲酰氯", "PIP-TMC"],
+    "materials": ["polyamide", "聚酰胺", "piperazine", "哌嗪", "trimesoyl chloride", "TMC"],
+    "methods": ["interfacial polymerization", "界面聚合", "coating", "crosslinking"],
+    "systems": ["nanofiltration", "organic solvent nanofiltration", "OSN"],
+    "metrics": ["permeance", "flux", "rejection", "selectivity", "MWCO"]
+  },
+  "盐湖提锂": {
+    "en": ["lithium extraction from salt lake brine", "lithium recovery", "Li/Mg separation", "lithium magnesium selectivity"],
+    "broader": ["离子分离", "资源回收"],
+    "narrower": ["镁锂分离", "一二价离子分离", "高镁锂比卤水"],
+    "materials": ["positively charged nanofiltration membrane", "polyamide", "polyelectrolyte"],
+    "methods": ["interfacial polymerization", "layer-by-layer assembly", "surface grafting"],
+    "systems": ["salt lake brine", "LiCl/MgCl2", "high Mg/Li ratio brine"],
+    "metrics": ["Li+/Mg2+ selectivity", "separation factor", "recovery", "permeance", "rejection"]
+  },
+  "抗污染膜": {
+    "en": ["antifouling membrane", "fouling-resistant nanofiltration membrane", "low-fouling membrane"],
+    "broader": ["膜污染控制", "表面改性"],
+    "narrower": ["抗蛋白污染", "抗有机污染", "抗生物污染"],
+    "materials": ["zwitterion", "PEG", "hydrophilic coating", "MOF", "graphene oxide"],
+    "methods": ["surface grafting", "coating", "interfacial polymerization", "plasma treatment"],
+    "systems": ["BSA", "humic acid", "oil-water emulsion", "wastewater"],
+    "metrics": ["flux recovery ratio", "FRR", "irreversible fouling ratio", "contact angle", "rejection"]
+  },
+  "纳滤": {
+    "en": ["nanofiltration", "NF membrane"],
+    "broader": ["pressure-driven membrane", "膜分离"],
+    "narrower": ["水相纳滤", "有机溶剂纳滤", "荷电纳滤"],
+    "materials": ["polyamide", "polyethersulfone", "polyimide", "ceramic membrane", "MOF"],
+    "methods": ["interfacial polymerization", "phase inversion", "coating", "crosslinking"],
+    "systems": ["salt separation", "dye separation", "solvent recovery"],
+    "metrics": ["flux", "permeance", "rejection", "selectivity", "MWCO"]
+  }
+}

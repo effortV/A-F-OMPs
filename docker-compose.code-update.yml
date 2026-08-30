@@ -1,0 +1,24 @@
+# Overlay for ordinary source-code updates. Use together with docker-compose.yml:
+# docker compose -f docker-compose.yml -f docker-compose.code-update.yml up -d --build api worker priority-worker
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.code-update
+      args:
+        BASE_IMAGE: nf-atlas-api:latest
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.code-update
+      args:
+        BASE_IMAGE: nf-atlas-api:latest
+
+  priority-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.code-update
+      args:
+        BASE_IMAGE: nf-atlas-api:latest
+

@@ -1,0 +1,5 @@
+# Streamlit Community Cloud frontend dependencies only.
+# Backend dependencies remain in requirements-server.txt / pyproject.toml and
+# are installed by Docker on the persistent server.
+streamlit>=1.40,<2
+httpx>=0.27,<1
