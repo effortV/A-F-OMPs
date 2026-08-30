@@ -132,5 +132,16 @@ if _SERVER_URL or _BACKEND_URL or _API_TOKEN:
         )
     else:
         _run_server_bridge(_SERVER_URL, _BACKEND_URL, _API_TOKEN)
-else:
+elif (_ROOT / "dataset.xlsx").is_file():
     runpy.run_path(str(_ROOT / "zhizhi" / "ui" / "app.py"), run_name="__main__")
+else:
+    # A GitHub deployment intentionally excludes the 500 MB scientific data
+    # store.  Never start a misleading empty local instance in that case.
+    import streamlit as st
+
+    st.set_page_config(page_title="致知 ZHIZHI · OMPs", page_icon="🧭", layout="wide")
+    st.info("OMPs 云端入口已启动，正在等待独立服务器连接配置。")
+    st.caption(
+        "请在 Streamlit Secrets 中填写 OMPS_SERVER_APP_URL、"
+        "OMPS_BACKEND_URL 和 OMPS_API_TOKEN；dataset.xlsx 与文献库不会上传到 GitHub。"
+    )

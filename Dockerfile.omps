@@ -1,4 +1,7 @@
-FROM python:3.11-slim-bookworm
+# The deployment host cannot reliably reach registry-1.docker.io.  Use the
+# same mirror already used by its existing containers; the image remains the
+# official Python library image and is still pinned to Python 3.11/bookworm.
+FROM docker.1ms.run/library/python:3.11-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
