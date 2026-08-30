@@ -1,0 +1,216 @@
+# 致知 ZHIZHI —— 全局配置
+# 密钥从 .env 读取（.env 已在 .gitignore 中），此处不放明文 key。
+
+paths:
+  dataset: "dataset.xlsx"
+  reference_dir: "reference-59"
+  new_pdf_dir: "store/pdf_new"
+  store: "store"
+  db: "store/zhizhi.db"
+  figures: "store/figures"
+  cards: "store/cards"
+  logs: "store/logs"
+  cache: "store/cache"
+
+llm:
+  model: "deepseek-ai/DeepSeek-V4-Pro"
+  # 仅用于文献摄取的低风险预处理：章节/证据块筛选、基础元数据和实验条件整理。
+  # 机理主张、知识图谱三元组、候选文献相关性初筛以及所有对话仍使用上面的 V4-Pro。
+  literature_preprocess_model: "Pro/deepseek-ai/DeepSeek-V3.2"
+  # 备选/降级模型链由 .env 的 LLM_FALLBACK_MODELS 控制（逗号分隔）。
+  # 不设 = 只重试主模型，绝不静默降级到别的模型
+  # （降级会让结果质量在你不知情的情况下变化，科研场景不可接受）。
+  # 换模型只改 .env 的 LLM_MODEL 一处即可，这里不再写死任何模型名。
+  embed_model: "BAAI/bge-m3"
+  embed_dim: 1024
+  temperature: 0.3
+  # DeepSeek-V4-Pro 是推理模型。thinking_default=true 保留思维链（发现/验证推理需要）；
+  # 机械任务在代码里显式传 thinking=False，可快 3-4 倍。
+  thinking_default: true
+  # 所有 Agent 交互对话默认开启深度思考；UI 开关仍可按单个会话临时关闭。
+  chat_thinking: true
+  thinking_budget: 4096
+  # 长文生成（L2/L3 方案）实测需 200-400s，
+  # 超时设小了会反复重试、看起来像卡死。
+  timeout: 600
+  max_retries: 3
+  # Agent 成本熔断：限制循环轮数、总工具数、重复调用、上下文和墙钟时间。
+  # 达到预算后会禁用工具并要求模型直接综合已有证据作答。
+  max_tool_iters: 8
+  max_tool_calls: 8
+  max_repeated_tool_calls: 2
+  max_tool_result_chars: 6000
+  max_agent_context_tokens: 18000
+  max_agent_run_seconds: 300
+  # 内部咨询只允许一层，且被咨询 Agent 最多 4 轮，禁止咨询链递归。
+  consult_max_depth: 1
+  consult_max_tool_iters: 4
+  # 会话历史超过该 token 数即触发滚动摘要
+  memory_budget_tokens: 24000
+
+agents:
+  # 不同 Agent / 不同会话可并行；同一会话仍串行，避免消息交叉写入。
+  max_workers: 4
+
+data:
+  target: "removal rate (%)"
+  group_cols:
+    compound: "Types of contaminants"
+    membrane: "Type of MB"
+    membrane_class: "Type of MB.1"
+    reference: "reference"
+  # 20 个建模特征（与既有工作严格对应 dataset.xlsx 的列）
+  features:
+    - "compound size (nm)"
+    - "Compound charge"
+    - "Compound log K ow"
+    - "Density (g·cm-3)"
+    - "Diffusion coefficient (cm2·s-1)"
+    - "pKa1 "
+    - "pKa2"
+    - "WS (mg/L)"
+    - "MaxPartialCharge"
+    - "E"
+    - "A"
+    - "ΦS"
+    - "ΦD"
+    - "∆Gs-m (J·m-2)"
+    - "MB contact angle (°)"
+    - "MB zeta potential"
+    - "Pressure (kPa)"
+    - "Measurement time (min)"
+    - "Initial concentration of compound (mg/L)"
+    - "pH"
+  # 固定的机理特征集合。其它列仍是模型输入，但不再标作“机理特征”。
+  mechanism_features:
+    - "ΦS"
+    - "ΦD"
+    - "∆Gs-m (J·m-2)"
+  # 语义特征分组（消融用）
+  feature_groups:
+    size_exclusion: ["compound size (nm)", "Diffusion coefficient (cm2·s-1)", "Density (g·cm-3)"]
+    hydrophobicity: ["Compound log K ow", "WS (mg/L)", "MB contact angle (°)", "∆Gs-m (J·m-2)"]
+    electrostatics: ["Compound charge", "pKa1 ", "pKa2", "MaxPartialCharge", "MB zeta potential", "pH"]
+    abraham_lfer: ["E", "A"]
+    membrane_geom: ["ΦS", "ΦD"]
+    operating: ["Pressure (kPa)", "Measurement time (min)", "Initial concentration of compound (mg/L)"]
+    substructure: ["__SMARTS__"]
+  # 缺失指示位：默认关闭，保证特征空间与既有工作严格一致（12 子结构 + 20 特征 = 32 列）。
+  # 打开后会给缺失率 >阈值 的列各加一个 _isna 列，属于诊断用途，不是主模型口径。
+  use_missing_indicator: false
+  missing_indicator_threshold: 0.05
+  # 列顺序：true = 12 个子结构在前、20 个特征在后（与既有脚本 np.hstack(arr1, arr3) 一致）。
+  # XGBoost 的 colsample_bytree 对列顺序敏感，要复现原指标必须保持一致。
+  substructure_first: true
+  # 12 个子结构 SMARTS（原「新匹配.txt」内容，内置为常量）
+  smarts:
+    - "F"
+    - "c"
+    - "[OH]"
+    - "S(=O)(=O)[OH]"
+    - "C(=O)[OH]"
+    - "[NH2]"
+    - "C(=O)N[#6]"
+    - "[#6]O[#6]"
+    - "S(=O)(=O)[#6]"
+    - "C(=O)O[#6]"
+    - "Cl"
+    - "[CH3]"
+  # 'c'（芳香碳）计数除以 6 折算成苯环数，与既有脚本一致
+  smarts_scale:
+    c: 6.0
+
+model:
+  # 生产模型 = 日常预测用的主模型，模型层的一等公民
+  production:
+    save_path: "store/models/production.json"
+    n_features_expected: 32
+    # 增强模式：多种子集成 + 更低学习率更多树。同一测试集上实测 +0.019 R²，
+    # 属于标准的方差削减手段，不是调参碰运气。
+    enhanced:
+      n_seeds: 8
+      learning_rate: 0.05
+      n_estimators: 600
+      subsample: 0.9
+  grid_search:
+    scoring: "r2"
+    cv_folds: 5
+    param_grid:
+      max_depth: [5, 6, 7, 8]
+      learning_rate: [0.05, 0.1, 0.15]
+      n_estimators: [200, 300, 500]
+      colsample_bytree: [0.6, 0.7, 0.8]
+      reg_alpha: [0, 0.1, 0.5]
+  learning_curve_fractions: [0.2, 0.4, 0.6, 0.8, 1.0]
+  params:
+    colsample_bytree: 0.7
+    learning_rate: 0.1
+    max_depth: 7
+    reg_alpha: 0.1
+    n_estimators: 300
+    random_state: 108
+  cv:
+    n_splits: 5
+    default_group: "compound"
+  legacy_split:
+    test_size: 0.2
+    random_state: 108
+  use_membrane_onehot: false
+
+discovery:
+  residual_top_pct: 0.20
+  n_clusters: 6
+  # 描述符与既有特征相关系数超过此值直接判为「非新信息」
+  redundancy_r_threshold: 0.90
+  # 描述符检验通过阈值
+  pass_delta_r2: 0.005
+  fdr_alpha: 0.10
+  n_bootstrap: 200
+  n_yscramble: 20
+  conformers: 30
+  # 引擎3 默认模式：auto_propose = Agent 自己提领域（不限于下面的池子）
+  cross_domain_mode: "auto_propose"
+  # 引擎3 总预算：给核心 V4-Pro 推理完整 1000 秒，并为提域/查重留出余量。
+  cross_domain_max_seconds: 1200
+  domain_proposal_timeout: 55
+  cross_domain_llm_timeout: 1000
+  # 轮转池仅用于系统性覆盖，不是 Agent 想象力的边界
+  cross_domain_pool:
+    - "药物化学 (medicinal chemistry)"
+    - "色谱固定相 (chromatography stationary phase)"
+    - "沸石催化与择形选择性 (zeolite catalysis / shape selectivity)"
+    - "软物质与水合作用 (soft matter / hydration)"
+    - "渗流理论 (percolation theory)"
+    - "气体分离膜 (gas separation membranes)"
+    - "蛋白-配体结合 (protein-ligand binding)"
+    - "离子液体与深共熔溶剂 (ionic liquids)"
+    - "土壤/沉积物吸附地球化学 (sorption geochemistry)"
+    - "膜转运蛋白选择性 (membrane transporter selectivity)"
+
+literature:
+  chunk_tokens: 1000
+  chunk_overlap: 150
+  embed_batch: 16
+  retrieve_top_k: 8
+  # 结构化抽取的输入上下文预算（单篇 LLM 延迟的主要来源）
+  extract_max_chars: 22000
+  # V3.2 从全文候选块中筛给 V4-Pro 的原文预算，降低关键语义调用的输入费用。
+  semantic_max_chars: 13000
+  preprocess_max_chunks: 14
+  # 摄取并发线程数：LLM 调用是 IO 密集，多线程能近线性提速
+  n_workers: 4
+  # 新颖性查重只做本地语料 + OpenAlex 元数据；相同命题短期复用，避免重复 API。
+  novelty_max_seconds: 120
+  novelty_cache_hours: 24
+  # 文献扩充：边际收益停机准则
+  expansion:
+    batch_size: 10
+    min_papers: 10
+    max_papers: 100
+    # 连续 N 批「新概念产出率」低于阈值即停
+    saturation_batches: 2
+    saturation_yield: 0.15
+  sources: ["openalex", "crossref", "europepmc", "semanticscholar"]
+
+validation:
+  l1_external_holdout_refs: 1

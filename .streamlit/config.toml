@@ -1,0 +1,18 @@
+[server]
+headless = true
+fileWatcherType = "auto"
+maxUploadSize = 400
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "light"
+primaryColor = "#2563EB"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F4F6F9"
+textColor = "#16202C"
+
+[logger]
+# 压掉 "The fragment with id ... does not exist anymore" 这类 INFO 噪音
+level = "warning"
