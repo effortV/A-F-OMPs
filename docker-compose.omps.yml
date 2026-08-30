@@ -1,68 +1,27 @@
 services:
-  omps-ui:
+  omps-backend:
     build:
       context: .
       dockerfile: Dockerfile.omps
     image: af-omps:latest
-    container_name: af-omps-ui
-    restart: unless-stopped
-    command:
-      - streamlit
-      - run
-      - streamlit_server.py
-      - --server.address=0.0.0.0
-      - --server.port=8502
-      - --server.headless=true
-      - --server.enableCORS=false
-      - --server.enableXsrfProtection=false
-      - --server.maxUploadSize=400
-    environment:
-      OMPS_SERVER_SECRET_FILE: /run/omps-secrets/omps.env
-    ports:
-      - "127.0.0.1:8502:8502"
-    volumes:
-      - ./live_data/dataset.xlsx:/app/dataset.xlsx:ro
-      - ./live_data/reference-59:/app/reference-59
-      - ./live_data/store:/app/store
-      - ./server_secrets:/run/omps-secrets
-
-  omps-bridge:
-    image: af-omps:latest
-    container_name: af-omps-bridge
+    container_name: af-omps-backend
     restart: unless-stopped
     command:
       - uvicorn
       - omps_bridge:app
       - --host=0.0.0.0
       - --port=8602
+      - --workers=1
     env_file:
       - .env.bridge
     environment:
-      OMPS_DATA_ROOT: /data
+      OMPS_DATA_ROOT: /app
+      OMPS_SERVER_MODE: "true"
       OMPS_SERVER_SECRET_FILE: /run/omps-secrets/omps.env
     ports:
       - "127.0.0.1:8602:8602"
     volumes:
-      - ./live_data:/data:ro
+      - ./live_data/dataset.xlsx:/app/dataset.xlsx:ro
+      - ./live_data/reference-59:/app/reference-59
+      - ./live_data/store:/app/store
       - ./server_secrets:/run/omps-secrets
-    depends_on:
-      - omps-ui
-
-  omps-edge:
-    image: docker.1ms.run/library/caddy:2-alpine
-    container_name: af-omps-edge
-    restart: unless-stopped
-    ports:
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - omps_caddy_data:/data
-      - omps_caddy_config:/config
-    depends_on:
-      - omps-ui
-      - omps-bridge
-
-volumes:
-  omps_caddy_data:
-  omps_caddy_config:

@@ -9,7 +9,7 @@ import time
 import uuid
 from typing import Any, Callable, Iterator
 
-from . import db
+from . import db, remote
 from .config import CFG
 from .llm import LLM, approx_tokens
 from .tools import REGISTRY, to_model_text
@@ -25,6 +25,8 @@ def set_active_session(agent: str, session_id: str) -> str:
     pointer in SQLite makes switching agents (and even restarting the UI)
     return to the exact conversation the user left.
     """
+    if remote.enabled():
+        return remote.call("agent", "set_active_session", agent, session_id)
     row = db.q1("SELECT id,title FROM sessions WHERE id=? AND agent=?", (session_id, agent))
     if not row:
         raise ValueError(f"会话 {session_id} 不属于智能体 {agent}")
@@ -35,6 +37,8 @@ def set_active_session(agent: str, session_id: str) -> str:
 
 
 def new_session(agent: str, title: str = "", make_active: bool = True) -> str:
+    if remote.enabled():
+        return remote.call("agent", "new_session", agent, title, make_active)
     sid = f"{agent}-{uuid.uuid4().hex[:8]}"
     db.ex("INSERT INTO sessions(id,agent,title,created_at) VALUES(?,?,?,?)",
           (sid, agent, title or time.strftime("%m-%d %H:%M"), time.time()))
@@ -45,6 +49,8 @@ def new_session(agent: str, title: str = "", make_active: bool = True) -> str:
 
 def delete_session(agent: str, session_id: str) -> str:
     """Delete one user conversation and select/create a safe replacement."""
+    if remote.enabled():
+        return remote.call("agent", "delete_session", agent, session_id)
     row = db.q1("SELECT id,title FROM sessions WHERE id=? AND agent=?",
                 (session_id, agent))
     if not row:
@@ -64,6 +70,8 @@ def delete_session(agent: str, session_id: str) -> str:
 
 
 def list_sessions(agent: str, include_internal: bool = False) -> list[dict]:
+    if remote.enabled():
+        return remote.call("agent", "list_sessions", agent, include_internal)
     sql = "SELECT * FROM sessions WHERE agent=?"
     if not include_internal:
         sql += " AND COALESCE(title,'') NOT LIKE '[咨询]%'"
@@ -73,6 +81,8 @@ def list_sessions(agent: str, include_internal: bool = False) -> list[dict]:
 
 def active_session(agent: str, create: bool = True) -> str | None:
     """Return the persisted active session, repairing stale pointers safely."""
+    if remote.enabled():
+        return remote.call("agent", "active_session", agent, create)
     sid = db.kv_get(f"{_ACTIVE_SESSION_PREFIX}{agent}")
     if sid:
         row = db.q1("SELECT id,title FROM sessions WHERE id=? AND agent=?", (sid, agent))
@@ -109,6 +119,8 @@ def save_message(session_id: str, role: str, content: str, extra: dict | None = 
 
 def visible_history(session_id: str) -> list[dict]:
     """只给 UI 看的对话（过滤掉 tool 消息体，保留工具调用摘要）。"""
+    if remote.enabled():
+        return remote.call("agent", "visible_history", session_id)
     out = []
     for r in db.q("SELECT role,content,extra FROM messages WHERE session_id=? ORDER BY id",
                   (session_id,)):

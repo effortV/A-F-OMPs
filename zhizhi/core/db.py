@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .config import CFG
+from . import remote
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -197,6 +198,8 @@ def _migrate(c: sqlite3.Connection) -> None:
 
 def conn() -> sqlite3.Connection:
     """线程局部连接（Streamlit / worker 多线程安全）。"""
+    if remote.enabled():
+        raise remote.RemoteError("云端前端不能直接打开服务器 SQLite")
     c = getattr(_local, "conn", None)
     if c is None:
         Path(CFG.db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -210,10 +213,14 @@ def conn() -> sqlite3.Connection:
 
 
 def q(sql: str, args: Iterable = ()) -> list[sqlite3.Row]:
+    if remote.enabled():
+        return remote.call("db", "q", sql, list(args))
     return conn().execute(sql, tuple(args)).fetchall()
 
 
 def q1(sql: str, args: Iterable = ()):
+    if remote.enabled():
+        return remote.call("db", "q1", sql, list(args))
     return conn().execute(sql, tuple(args)).fetchone()
 
 
@@ -236,11 +243,16 @@ def rows_to_dicts(rows) -> list[dict]:
 
 # ---- kv 控制位 --------------------------------------------------------
 def kv_get(k: str, default: Any = None) -> Any:
+    if remote.enabled():
+        return remote.call("db", "kv_get", k, default)
     r = q1("SELECT v FROM kv WHERE k=?", (k,))
     return json.loads(r["v"]) if r else default
 
 
 def kv_set(k: str, v: Any) -> None:
+    if remote.enabled():
+        remote.call("db", "kv_set", k, v)
+        return
     ex("INSERT INTO kv(k,v) VALUES(?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v",
        (k, json.dumps(v, ensure_ascii=False)))
 
@@ -274,6 +286,9 @@ def log_usage(agent: str, model: str, kind: str, pt: int, ct: int) -> None:
 
 
 def init() -> None:
+    if remote.enabled():
+        remote.health()
+        return
     conn()
 
 

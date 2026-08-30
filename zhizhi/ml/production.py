@@ -22,7 +22,7 @@ import xgboost as xgb
 from sklearn.metrics import r2_score
 from sklearn.model_selection import GroupKFold, KFold, train_test_split
 
-from ..core import db
+from ..core import db, remote
 from ..core.config import CFG
 from ..dataio import loader
 from .model import PARAMS, _metrics, get_bundle, make_model
@@ -61,6 +61,8 @@ class _Ensemble:
 
 def train_production(save: bool = True, params: dict | None = None,
                      mode: str = "base") -> dict:
+    if remote.enabled():
+        return remote.call("module", "production.train_production", save, params, mode)
     """训练生产模型并落盘。
 
     mode='base'     —— 与既有脚本严格同参

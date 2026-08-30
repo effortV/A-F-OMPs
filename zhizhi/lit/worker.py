@@ -13,7 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ..core import db
+from ..core import db, remote
 from ..core.config import CFG
 from ..core.llm import LLM
 from . import dedup, extract, index, pdf
@@ -63,6 +63,8 @@ def local_paper_id(path: Path) -> str:
 
 
 def bootstrap_core_corpus() -> dict:
+    if remote.enabled():
+        return remote.call("module", "worker.bootstrap_core_corpus")
     """把 reference-59 目录的 PDF 注册为核心语料（pinned，不可删）。"""
     d = CFG.reference_dir
     files = sorted(d.glob("*.pdf")) if d.exists() else []
@@ -91,6 +93,8 @@ def bootstrap_core_corpus() -> dict:
 
 
 def scan_new_pdfs() -> dict:
+    if remote.enabled():
+        return remote.call("module", "worker.scan_new_pdfs")
     """扫描 store/pdf_new 里手动丢进来的 PDF。"""
     d = CFG.new_pdf_dir
     files = sorted(list(d.glob("*.pdf")))
@@ -267,6 +271,8 @@ def ensure_thread() -> None:
 
 
 def control(action: str) -> dict:
+    if remote.enabled():
+        return remote.call("module", "worker.control", action)
     """start | pause | resume | stop"""
     if action in ("start", "resume"):
         db.kv_set(CTL, "running")
@@ -293,6 +299,8 @@ def _activate_learning_task(task_id: int, message: str, auto_start: bool) -> dic
 
 
 def status() -> dict:
+    if remote.enabled():
+        return remote.call("module", "worker.status")
     # Papers are the canonical learning state.  Task rows may include deleted
     # history, which used to inflate the denominator (for example 139/234 while
     # the library actually contained 233 papers).
@@ -437,6 +445,8 @@ def register_new_pdf(src_path: str, title: str = "", doi: str = "",
 
 
 def needs_fulltext() -> list[dict]:
+    if remote.enabled():
+        return remote.call("module", "worker.needs_fulltext")
     """列出所有拿不到全文的文献 —— 这些就是等你手动上传 PDF 的对象。"""
     rows = db.q(
         "SELECT id,title,doi,year,journal,status,evidence_level,error,source "

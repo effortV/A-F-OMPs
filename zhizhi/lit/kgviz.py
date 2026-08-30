@@ -11,7 +11,7 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 
-from ..core import db
+from ..core import db, remote
 from ..core.config import CFG
 from . import kg
 
@@ -58,6 +58,9 @@ def _subgraph(node_types: list[str] | None = None, min_degree: int = 2,
 def plotly_graph(node_types: list[str] | None = None, min_degree: int = 2,
                  max_nodes: int = 250, layout: str = "spring"):
     """全局交互图。返回 plotly Figure。"""
+    if remote.enabled():
+        return remote.call("module", "kgviz.plotly_graph", node_types, min_degree,
+                           max_nodes, layout)
     import plotly.graph_objects as go
     u = _subgraph(node_types, min_degree, max_nodes)
     if u.number_of_nodes() == 0:
@@ -105,6 +108,8 @@ def plotly_graph(node_types: list[str] | None = None, min_degree: int = 2,
 
 def neighborhood_figure(name: str, hops: int = 1, max_nodes: int = 60):
     """某个实体的 1-2 跳邻域图，边上标关系类型。比全局图有用得多。"""
+    if remote.enabled():
+        return remote.call("module", "kgviz.neighborhood_figure", name, hops, max_nodes)
     import plotly.graph_objects as go
     g = kg.to_networkx()
     target = None
@@ -186,6 +191,8 @@ def contradiction_heatmap(min_claims: int = 2, top_desc: int = 22):
     颜色在同一行里出现正负交替 = 同一个因素在不同膜上效应反号，
     这正是引擎3 要吃的矛盾。
     """
+    if remote.enabled():
+        return remote.call("module", "kgviz.contradiction_heatmap", min_claims, top_desc)
     import plotly.graph_objects as go
     rows = db.q("SELECT descriptor, membrane, direction FROM claims "
                 "WHERE direction IN ('up','down')")
@@ -229,6 +236,9 @@ def contradiction_heatmap(min_claims: int = 2, top_desc: int = 22):
 def export_static(node_types: list[str] | None = None, min_degree: int = 3,
                   max_nodes: int = 160) -> dict:
     """matplotlib 静态图，PNG + SVG，可直接进论文。"""
+    if remote.enabled():
+        return remote.call("module", "kgviz.export_static", node_types, min_degree,
+                           max_nodes)
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -264,6 +274,8 @@ def export_static(node_types: list[str] | None = None, min_degree: int = 3,
 # ==================== 自然语言导读 ====================
 def graph_facts(top_n: int = 12) -> dict:
     """从图谱里抽出可读的事实，供导读使用。全部来自 DB，不是 LLM 编的。"""
+    if remote.enabled():
+        return remote.call("module", "kgviz.graph_facts", top_n)
     g = kg.to_networkx()
     und = g.to_undirected()
     deg = dict(und.degree())
@@ -320,6 +332,8 @@ OVERVIEW_SYS = """你在给一个膜分离知识图谱写「导读」，读者�
 
 def narrate_overview(agent: str = "bowen") -> dict:
     """整张图谱的自然语言导读。"""
+    if remote.enabled():
+        return remote.call("module", "kgviz.narrate_overview", agent)
     from ..core.llm import LLM
     facts = graph_facts()
     if facts["stats"]["n_nodes"] == 0:
@@ -348,6 +362,8 @@ ENTITY_SYS = """你在解释一个膜分离知识图谱里某个实体的「邻�
 
 def narrate_entity(name: str, agent: str = "bowen") -> dict:
     """某个实体的自然语言导读，带原文引语。"""
+    if remote.enabled():
+        return remote.call("module", "kgviz.narrate_entity", name, agent)
     from ..core.llm import LLM
     nb = kg.neighbors(name, limit=60)
     if "error" in nb:
@@ -387,6 +403,8 @@ CONFLICT_SYS = """你在解读一张「描述符 × 膜」的效应方向热力�
 
 def narrate_conflicts(agent: str = "bowen") -> dict:
     """矛盾热力图的自然语言解读。"""
+    if remote.enabled():
+        return remote.call("module", "kgviz.narrate_conflicts", agent)
     from ..core.llm import LLM
     rows = db.q("SELECT descriptor, membrane, direction, COUNT(*) c FROM claims "
                 "WHERE direction IN ('up','down') GROUP BY lower(descriptor), membrane, direction")

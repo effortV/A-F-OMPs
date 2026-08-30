@@ -1,23 +1,16 @@
 """Streamlit Community Cloud entrypoint for the standalone OMPs project.
 
-Two deployment modes are supported:
-
-* standalone: map Streamlit Secrets to environment variables and run OMPs in
-  the Community Cloud container (useful for demos without persistent data);
-* server bridge: securely provision the model settings to the dedicated OMPs
-  server and embed the server-hosted UI.  In this mode SQLite, PDFs, models,
-  workers and all generated artifacts stay on persistent server storage.
-
-Nothing in this module imports or connects to the separate NF project.
+In production the complete Streamlit UI runs in Community Cloud while every
+database, file, Agent, model and background-worker operation is executed by the
+dedicated OMPs server through a host-key-pinned SSH tunnel. No NF setting,
+port, database or key is imported or reused.
 """
-
 from __future__ import annotations
 
 import os
 import runpy
-from pathlib import Path
 from collections.abc import Mapping
-from urllib.parse import urlparse
+from pathlib import Path
 
 
 _SECRET_ENV_NAMES = (
@@ -27,8 +20,23 @@ _SECRET_ENV_NAMES = (
     "LIT_PREPROCESS_MODEL",
     "EMBED_MODEL",
     "LLM_FALLBACK_MODELS",
-    "OMPS_SERVER_APP_URL",
-    "OMPS_BACKEND_URL",
+    "OMPS_SSH_HOST",
+    "OMPS_SSH_PORT",
+    "OMPS_SSH_USERNAME",
+    "OMPS_SSH_HOST_KEY_SHA256",
+    "OMPS_SSH_PRIVATE_KEY",
+    "OMPS_REMOTE_API_HOST",
+    "OMPS_REMOTE_API_PORT",
+    "OMPS_API_TOKEN",
+)
+_SSH_REQUIRED = (
+    "OMPS_SSH_HOST",
+    "OMPS_SSH_PORT",
+    "OMPS_SSH_USERNAME",
+    "OMPS_SSH_HOST_KEY_SHA256",
+    "OMPS_SSH_PRIVATE_KEY",
+    "OMPS_REMOTE_API_HOST",
+    "OMPS_REMOTE_API_PORT",
     "OMPS_API_TOKEN",
 )
 
@@ -40,7 +48,6 @@ def _load_streamlit_secrets() -> None:
         secrets: Mapping[str, object] = st.secrets
     except Exception:
         return
-
     for name in _SECRET_ENV_NAMES:
         if name in os.environ or name not in secrets:
             continue
@@ -49,31 +56,8 @@ def _load_streamlit_secrets() -> None:
             os.environ[name] = str(value)
 
 
-_load_streamlit_secrets()
-os.environ.setdefault("STREAMLIT_CLOUD_MODE", "true")
-
-_ROOT = Path(__file__).resolve().parent
-
-
-def _clean_https_url(name: str) -> str:
-    """Return a normalized HTTPS URL or an empty string.
-
-    Requiring HTTPS prevents model credentials and scientific data from being
-    sent over a plaintext server link.
-    """
-    raw = os.environ.get(name, "").strip().rstrip("/")
-    if not raw:
-        return ""
-    parsed = urlparse(raw)
-    if parsed.scheme != "https" or not parsed.netloc:
-        return ""
-    return raw
-
-
-def _run_server_bridge(server_url: str, backend_url: str, token: str) -> None:
-    import requests
+def _show_connection_error(message: str, detail: str = "") -> None:
     import streamlit as st
-    import streamlit.components.v1 as components
 
     st.set_page_config(
         page_title="致知 ZHIZHI · OMPs",
@@ -81,67 +65,47 @@ def _run_server_bridge(server_url: str, backend_url: str, token: str) -> None:
         layout="wide",
         initial_sidebar_state="collapsed",
     )
-
-    payload = {
-        name: os.environ.get(name, "")
-        for name in (
-            "SILICONFLOW_API_KEY",
-            "SILICONFLOW_BASE_URL",
-            "LLM_MODEL",
-            "LIT_PREPROCESS_MODEL",
-            "EMBED_MODEL",
-            "LLM_FALLBACK_MODELS",
-        )
-        if os.environ.get(name, "")
-    }
-
-    try:
-        response = requests.post(
-            f"{backend_url}/config",
-            headers={"Authorization": f"Bearer {token}"},
-            json=payload,
-            timeout=20,
-        )
-        response.raise_for_status()
-        health = requests.get(f"{backend_url}/health", timeout=15)
-        health.raise_for_status()
-    except requests.RequestException as exc:
-        st.error("OMPs 服务器暂时无法连接。请稍后重试或检查服务器运行状态。")
-        st.caption(f"连接目标：{urlparse(backend_url).netloc}；错误类型：{type(exc).__name__}")
-        if st.button("重新连接", use_container_width=True):
-            st.rerun()
-        return
-
-    # ``?embed=true`` hides the inner Streamlit toolbar while preserving every
-    # OMPs page and control.  Scrolling remains enabled for long research runs.
-    components.iframe(f"{server_url}/?embed=true", height=5600, scrolling=True)
+    st.error(message)
+    if detail:
+        st.caption(detail)
+    if st.button("重新连接", use_container_width=True):
+        st.rerun()
 
 
-_SERVER_URL = _clean_https_url("OMPS_SERVER_APP_URL")
-_BACKEND_URL = _clean_https_url("OMPS_BACKEND_URL")
-_API_TOKEN = os.environ.get("OMPS_API_TOKEN", "").strip()
+_load_streamlit_secrets()
+os.environ.setdefault("STREAMLIT_CLOUD_MODE", "true")
+_ROOT = Path(__file__).resolve().parent
+_present = [name for name in _SSH_REQUIRED if os.environ.get(name, "").strip()]
+_missing = [name for name in _SSH_REQUIRED if not os.environ.get(name, "").strip()]
 
-if _SERVER_URL or _BACKEND_URL or _API_TOKEN:
-    if not (_SERVER_URL and _BACKEND_URL and _API_TOKEN):
-        import streamlit as st
-
-        st.set_page_config(page_title="致知 ZHIZHI · OMPs", page_icon="🧭", layout="wide")
-        st.error(
-            "服务器连接配置不完整：需要同时填写 OMPS_SERVER_APP_URL、"
-            "OMPS_BACKEND_URL 和 OMPS_API_TOKEN。"
+if _present:
+    if _missing:
+        _show_connection_error(
+            "OMPs SSH 连接配置不完整。",
+            "缺少：" + "、".join(_missing),
         )
     else:
-        _run_server_bridge(_SERVER_URL, _BACKEND_URL, _API_TOKEN)
+        os.environ["OMPS_REMOTE_MODE"] = "true"
+        try:
+            from zhizhi.core import remote
+
+            remote.ensure_tunnel()
+            remote.sync_model_config()
+            health = remote.health()
+            if not health.get("dataset") or not health.get("database"):
+                raise remote.RemoteError("服务器数据集或数据库未挂载")
+        except Exception as exc:  # noqa: BLE001 - show a safe connection summary
+            _show_connection_error(
+                "OMPs 服务器 SSH 连接失败。请检查专用 SSH Secrets 或服务器状态。",
+                f"错误类型：{type(exc).__name__}；{str(exc)[:500]}",
+            )
+        else:
+            runpy.run_path(str(_ROOT / "zhizhi" / "ui" / "app.py"), run_name="__main__")
 elif (_ROOT / "dataset.xlsx").is_file():
     runpy.run_path(str(_ROOT / "zhizhi" / "ui" / "app.py"), run_name="__main__")
 else:
-    # A GitHub deployment intentionally excludes the 500 MB scientific data
-    # store.  Never start a misleading empty local instance in that case.
-    import streamlit as st
-
-    st.set_page_config(page_title="致知 ZHIZHI · OMPs", page_icon="🧭", layout="wide")
-    st.info("OMPs 云端入口已启动，正在等待独立服务器连接配置。")
-    st.caption(
-        "请在 Streamlit Secrets 中填写 OMPS_SERVER_APP_URL、"
-        "OMPS_BACKEND_URL 和 OMPS_API_TOKEN；dataset.xlsx 与文献库不会上传到 GitHub。"
+    _show_connection_error(
+        "OMPs 云端入口已启动，正在等待独立服务器 SSH 配置。",
+        "请填写 OMPs 专用的 OMPS_SSH_*、OMPS_REMOTE_API_* 和 OMPS_API_TOKEN；"
+        "数据集与文献库不会上传到 GitHub。",
     )

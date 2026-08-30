@@ -143,6 +143,17 @@ def get_bundle(extra: dict[str, dict[str, float]] | None = None,
     return b
 
 
+def ui_feature_defaults(limit: int = 20) -> dict:
+    """Small JSON-safe projection of the diagnostic bundle for the web form."""
+    bundle = get_bundle()
+    features = [name for name in loader.FEATURES if name in bundle.X.columns][: int(limit)]
+    medians = {
+        name: float(bundle.X[name].median()) if bundle.X[name].notna().any() else 0.0
+        for name in features
+    }
+    return {"features": features, "medians": medians}
+
+
 def legacy_report() -> dict:
     """复现既有工作的随机切分口径，并与分组 CV 对照，量化泄漏幅度。"""
     built = loader.build_matrix()

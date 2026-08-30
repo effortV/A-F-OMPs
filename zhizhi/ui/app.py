@@ -20,7 +20,7 @@ import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
 from zhizhi.agents.registry import META, all_agents  # noqa: E402
-from zhizhi.core import db, jobs  # noqa: E402
+from zhizhi.core import db, jobs, remote  # noqa: E402
 from zhizhi.core.agent import (active_session, delete_session, list_sessions,
                                new_session, set_active_session,
                                visible_history)  # noqa: E402
@@ -31,10 +31,11 @@ st.set_page_config(page_title="致知 ZHIZHI", page_icon="🧭", layout="wide",
 db.init()
 all_agents()
 jobs.recover_orphaned_jobs()
+_REMOTE_MODE = remote.enabled()
 
 # 上次退出时 worker 是 running 的话，新进程要把线程拉回来，
 # 否则界面显示 running 但 0 个活跃线程，队列会静默卡住。
-if db.kv_get("lit_worker", "paused") == "running":
+if not _REMOTE_MODE and db.kv_get("lit_worker", "paused") == "running":
     from zhizhi.lit import worker as _worker
     _worker.ensure_thread()
 
@@ -65,7 +66,8 @@ if getattr(_worker_module, "WORKER_API_VERSION", 0) < 2:
     db.kv_set("lit_worker", _previous_worker_state)
     if _previous_worker_state == "running":
         _worker_module.ensure_thread()
-_lit_tools.ensure_literature_scheduler()
+if not _REMOTE_MODE:
+    _lit_tools.ensure_literature_scheduler()
 
 
 def _backfill_first_schedule_paper_ids() -> None:
@@ -99,7 +101,8 @@ def _backfill_first_schedule_paper_ids() -> None:
         db.kv_set(key, config)
 
 
-_backfill_first_schedule_paper_ids()
+if not _REMOTE_MODE:
+    _backfill_first_schedule_paper_ids()
 
 # 颜色一律用半透明灰，深浅两套主题都能用；不硬编码具体色值。
 st.markdown("""
@@ -595,14 +598,17 @@ def show_fig(figinfo: dict, caption: str = "", slot: str = "") -> None:
     """
     if not figinfo or "png" not in figinfo:
         return
-    st.image(figinfo["png"], caption=caption or None, use_container_width=True)
+    png_source = (remote.fetch_file(figinfo["png"])
+                  if _REMOTE_MODE else figinfo["png"])
+    st.image(png_source, caption=caption or None, use_container_width=True)
     _FIG_SEQ["n"] += 1
     seq = _FIG_SEQ["n"]
     cols = st.columns(2)
     for i, k in enumerate(("png", "svg")):
         path = figinfo.get(k)
-        if path and Path(path).exists():
-            cols[i].download_button(f"下载 {k.upper()}", Path(path).read_bytes(),
+        if path and (_REMOTE_MODE or Path(path).exists()):
+            content = remote.fetch_file(path) if _REMOTE_MODE else Path(path).read_bytes()
+            cols[i].download_button(f"下载 {k.upper()}", content,
                                     file_name=Path(path).name,
                                     key=f"dl_{k}_{slot}_{Path(path).stem}_{seq}",
                                     use_container_width=True)
@@ -830,11 +836,11 @@ def page_bowen() -> None:
                        "同时合并 NF270 / NF 270 / NF-270 等实体别名。不会删除 PDF 文件。")
             d1, d2 = st.columns(2)
             if d1.button("只扫描重复项", key="lit_dedup_scan", use_container_width=True):
-                from zhizhi.lit.dedup import deduplicate_library
-                st.session_state["dedup_result"] = deduplicate_library(dry_run=True)
+                from zhizhi.tools.lit_tools import lit_deduplicate
+                st.session_state["dedup_result"] = lit_deduplicate(dry_run=True)
             if d2.button("扫描并合并", key="lit_dedup_apply", use_container_width=True):
-                from zhizhi.lit.dedup import deduplicate_library
-                st.session_state["dedup_result"] = deduplicate_library(dry_run=False)
+                from zhizhi.tools.lit_tools import lit_deduplicate
+                st.session_state["dedup_result"] = lit_deduplicate(dry_run=False)
             if st.session_state.get("dedup_result"):
                 st.json(st.session_state["dedup_result"])
 
@@ -1112,18 +1118,27 @@ def page_liangheng() -> None:
     with tabs[1]:
         st.caption("给 SMILES 自动算 12 个子结构；其余特征填你知道的，不知道的留空"
                    "（XGBoost 原生处理缺失，但缺太多会有警告）。")
-        from zhizhi.dataio import loader
         pc = st.columns([2, 1, 1])
         smi = pc[0].text_input("SMILES", value="CC(C)Cc1ccc(cc1)C(C)C(=O)O",
                                key="pred_smi")
         n_show = pc[1].number_input("显示前几个特征", 4, 20, 12, key="pred_nfeat")
         vals: dict = {"SMILES": smi} if smi else {}
-        from zhizhi.ml import model as MM
-        b = MM.get_bundle()
-        keys = [c for c in loader.FEATURES if c in b.X.columns][: int(n_show)]
+        if _REMOTE_MODE:
+            defaults = remote.call("module", "model.ui_feature_defaults", int(n_show))
+            keys = defaults["features"]
+            medians = defaults["medians"]
+        else:
+            from zhizhi.dataio import loader
+            from zhizhi.ml import model as MM
+            b = MM.get_bundle()
+            keys = [c for c in loader.FEATURES if c in b.X.columns][: int(n_show)]
+            medians = {
+                kk: (float(b.X[kk].median()) if b.X[kk].notna().any() else 0.0)
+                for kk in keys
+            }
         grid = st.columns(4)
         for i, kk in enumerate(keys):
-            med = float(b.X[kk].median()) if b.X[kk].notna().any() else 0.0
+            med = float(medians[kk])
             v = grid[i % 4].number_input(kk[:30], value=round(med, 4), format="%.4f",
                                          key=f"pv_{i}")
             vals[kk] = v
@@ -1844,7 +1859,8 @@ def page_tasks() -> None:
         figs = plots.list_figures()
         st.caption(f"图片 {len(figs)} 张（store/figures/）")
         for f in figs[:8]:
-            st.image(f, caption=Path(f).name, use_container_width=True)
+            source = remote.fetch_file(f) if _REMOTE_MODE else f
+            st.image(source, caption=Path(f).name, use_container_width=True)
         if st.button("📄 导出发现报告", key="sb_report", use_container_width=True):
             from zhizhi.tools.meta_tools import export_report
             st.success(export_report()["file"])

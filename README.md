@@ -46,6 +46,24 @@ python -m zhizhi.cli ui
 
 浏览器打开 `http://localhost:8501`。
 
+### Streamlit Cloud + 独立 OMPs 服务器
+
+云端只运行完整 Streamlit 界面；SQLite、数据集、PDF、模型产物、Agent 任务和文献
+worker 全部留在独立服务器。界面通过一把 **OMPs 专用且仅允许转发到
+`127.0.0.1:8602`** 的 SSH 密钥访问后端，不开放公网 443，也不复用 NF 的密钥、端口、
+容器或数据库。
+
+服务器启动：
+
+```bash
+docker compose -f docker-compose.omps.yml up -d --build --remove-orphans
+```
+
+Streamlit Community Cloud 的入口文件为 `streamlit_cloud.py`。Secrets 字段见
+`.streamlit/secrets.example.toml`；其中私钥和 `OMPS_API_TOKEN` 只能放在 Streamlit
+Secrets，不能提交到 GitHub。服务器持久数据目录通过 compose 挂载，Streamlit 休眠、
+重启或重新部署都不会导致文献重新学习。
+
 命令行对话：
 
 ```bash

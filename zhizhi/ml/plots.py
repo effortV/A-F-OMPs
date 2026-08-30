@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
 from ..core.config import CFG  # noqa: E402
+from ..core import remote  # noqa: E402
 
 # Windows 常见中文字体，找不到就退回英文标签
 for _f in ("Microsoft YaHei", "SimHei", "DejaVu Sans"):
@@ -150,6 +151,8 @@ def stratified_plot(rows: list[dict], title: str) -> dict:
 
 
 def list_figures(limit: int = 30) -> list[str]:
+    if remote.enabled():
+        return remote.call("module", "plots.list_figures", limit)
     d: Path = CFG.figures_dir
     if not d.exists():
         return []

@@ -5,7 +5,7 @@ import json
 import re
 import unicodedata
 
-from ..core import db
+from ..core import db, remote
 
 NODE_TYPES = ("Compound", "Membrane", "Mechanism", "Descriptor",
               "Condition", "Observation", "Paper", "Concept")
@@ -87,6 +87,8 @@ def canonicalize_existing_nodes() -> dict:
 
 def entity_choices(ntype: str = "", limit: int = 1000) -> list[dict]:
     """供 UI 搜索下拉框使用，按关系数排序。"""
+    if remote.enabled():
+        return remote.call("module", "kg.entity_choices", ntype, limit)
     args: tuple = ()
     where = ""
     if ntype:
@@ -103,6 +105,8 @@ def entity_choices(ntype: str = "", limit: int = 1000) -> list[dict]:
 
 
 def stats() -> dict:
+    if remote.enabled():
+        return remote.call("module", "kg.stats")
     n = db.q1("SELECT COUNT(*) c FROM kg_nodes")["c"]
     e = db.q1("SELECT COUNT(*) c FROM kg_edges")["c"]
     by_type = {r["type"]: r["c"] for r in

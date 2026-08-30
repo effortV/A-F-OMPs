@@ -11,7 +11,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from . import db
+from . import db, remote
 from .config import CFG
 from .tools import tool_runtime
 
@@ -34,6 +34,9 @@ _agent_factory = _default_agent_factory
 
 def recover_orphaned_jobs() -> None:
     """进程重启后，旧线程已不存在，把遗留 running/queued 标为失败。"""
+    if remote.enabled():
+        remote.call("jobs", "recover_orphaned_jobs")
+        return
     global _recovered
     with _lock:
         if _recovered:
@@ -54,6 +57,9 @@ def _active_for_session(session_id: str) -> dict | None:
 
 def submit(agent_key: str, session_id: str, prompt: str,
            thinking: bool | None = None) -> dict:
+    if remote.enabled():
+        return remote.call("jobs", "submit", agent_key, session_id, prompt,
+                           thinking=thinking)
     recover_orphaned_jobs()
     if thinking is None:
         thinking = bool(CFG.get("llm.chat_thinking", True))
@@ -195,6 +201,8 @@ def _is_cancel_requested(job_id: str) -> bool:
 
 def cancel(job_id: str) -> dict:
     """Cooperatively stop a queued/running job at the next model/tool boundary."""
+    if remote.enabled():
+        return remote.call("jobs", "cancel", job_id)
     with _lock:
         job = _jobs.get(job_id)
         if not job:
@@ -225,6 +233,8 @@ def _public(job: dict) -> dict:
 
 
 def get(job_id: str) -> dict | None:
+    if remote.enabled():
+        return remote.call("jobs", "get", job_id)
     with _lock:
         job = _jobs.get(job_id)
         return _public(job) if job else None
@@ -235,6 +245,9 @@ def list_jobs(agent_key: str = "", session_id: str = "",
     # The UI reads jobs before a user submits a new prompt.  Recover here as
     # well, otherwise rows left by a previous process can look permanently
     # running until the next submission.
+    if remote.enabled():
+        return remote.call("jobs", "list_jobs", agent_key, session_id,
+                           active_only, limit)
     recover_orphaned_jobs()
     with _lock:
         rows = list(_jobs.values())

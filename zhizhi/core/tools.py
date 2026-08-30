@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import json
+import inspect
 import time
 import traceback
+from functools import wraps
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -110,10 +112,20 @@ def tool(name: str, description: str, parameters: dict | None = None,
          category: str = "general", long_running: bool = False):
     """装饰器：注册一个工具。parameters 用 JSON Schema 描述。"""
     def deco(fn: Callable[..., Any]) -> Callable[..., Any]:
+        from . import remote
+
+        exposed = fn
+        if remote.enabled():
+            @wraps(fn)
+            def remote_tool(*args, **kwargs):
+                bound = inspect.signature(fn).bind_partial(*args, **kwargs)
+                return remote.call("tool", name, **bound.arguments)
+
+            exposed = remote_tool
         REGISTRY.add(Tool(name=name, description=description,
                           parameters=parameters or {"type": "object", "properties": {}},
-                          fn=fn, category=category, long_running=long_running))
-        return fn
+                          fn=exposed, category=category, long_running=long_running))
+        return exposed
     return deco
 
 
